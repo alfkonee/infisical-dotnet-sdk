@@ -13,20 +13,22 @@ public class UniversalAuth
     _setAccessTokenFunc = setAccessTokenFunc;
   }
 
-  public async Task<MachineIdentityCredential> LoginAsync(string clientId, string clientSecret)
+  public Task<MachineIdentityCredential> LoginAsync(string clientId, string clientSecret)
   {
-    try
-    {
-      var loginRequest = new UniversalAuthLoginRequest(clientId, clientSecret);
+    return LoginAsync(clientId, clientSecret, CancellationToken.None);
+  }
 
-      var response = await _apiClient.PostAsync<UniversalAuthLoginRequest, MachineIdentityCredential>("/api/v1/auth/universal-auth/login", loginRequest).ConfigureAwait(false);
-      _setAccessTokenFunc(response.AccessToken);
-      return response;
-    }
-    catch (Exception e)
-    {
-      throw new InfisicalException("Failed to login", e);
-    }
+  public async Task<MachineIdentityCredential> LoginAsync(
+    string clientId, string clientSecret, CancellationToken cancellationToken)
+  {
+    var loginRequest = new UniversalAuthLoginRequest(clientId, clientSecret);
+    var response = await _apiClient.SendSensitiveAsync<UniversalAuthLoginRequest, UniversalAuthLoginResponse>(
+      HttpMethod.Post, "/api/v1/auth/universal-auth/login", loginRequest, cancellationToken,
+      static credential => !string.IsNullOrWhiteSpace(credential.AccessToken)
+        && string.Equals(credential.TokenType, "Bearer", StringComparison.OrdinalIgnoreCase), retry: false).ConfigureAwait(false);
+    cancellationToken.ThrowIfCancellationRequested();
+    _setAccessTokenFunc(response.AccessToken);
+    return new MachineIdentityCredential(response.AccessToken, response.ExpiresIn, response.AccessTokenMaxTTL, response.TokenType);
   }
 
   private readonly ApiClient _apiClient;
